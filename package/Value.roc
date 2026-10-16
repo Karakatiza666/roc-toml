@@ -53,6 +53,9 @@ Value := [
 	##
 	## A key is bare when it is not empty and has only `A-Z a-z 0-9 _ -`. Else
 	## it is a basic string, as a String value.
+	##
+	## A date or time that `Toml.parse` would reject is printed with its
+	## digits, and the output does not parse.
 	print : Value -> Str
 	print = |value| print_value(value)
 }

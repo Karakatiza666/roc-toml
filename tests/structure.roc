@@ -186,13 +186,89 @@ expect err_line("[t]\nx = 1\ny = 01\n") == Ok(3)
 # S-ERR3, Toml.parse: the error gives the line of an unterminated string
 expect err_line("a = 1\nb = \"abc") == Ok(2)
 
-# S-ERR4, Output "Error" (accepted): the column is 1-based and counts bytes, at the byte where the parser stopped
-expect err_pos("v = 01") == Ok((1, 6))
-expect err_pos("[t]\nx = 1\ny = 01\n") == Ok((3, 6))
-expect err_pos("a = 1\n  b = ?") == Ok((2, 3))
+# S-ERR4, slice 6 (error column, syntax): 1-based, in bytes. `v = 01` can still start `v = 01:02:03`, so the error is one past the last byte
+expect err_pos("v = 01") == Ok((1, 7))
+expect err_pos("[t]\nx = 1\ny = 01\n") == Ok((3, 7))
+expect err_pos("a = 1\n  b = ?") == Ok((2, 7))
 
-# S-ERR5, Q10 and Output "Error": the column counts the bytes of a BOM at the start
-expect err_pos("\u(FEFF)v = 01") == Ok((1, 9))
+# S-ERR5, slice 6 and Q10: on line 1 the column counts the 3 bytes of a BOM
+expect err_pos("\u(FEFF)v = 01") == Ok((1, 10))
+expect err_pos("\u(FEFF)a = ?") == Ok((1, 8))
+expect err_pos("\u(FEFF)a = 1\nb = ?") == Ok((2, 5))
+
+# S-COL1, slice 6 (syntax): a bad byte in a value is the first byte that no valid document can have there
+expect err_pos("a = ?") == Ok((1, 5))
+expect err_pos("x = trux") == Ok((1, 8))
+expect err_pos("x = .7") == Ok((1, 5))
+expect err_pos("x = 1.\n") == Ok((1, 7))
+expect err_pos("a = \"x\u(1)\"") == Ok((1, 7))
+expect err_pos("a = [\n  1,\n  ?\n]") == Ok((3, 3))
+expect err_pos("a = { x = 1,\n y = 2 }") == Ok((1, 13))
+
+# S-COL2, slice 6 (syntax): a value that can still grow ends at the end of the text, one past the last byte
+expect err_pos("v = 012") == Ok((1, 8))
+
+# S-COL3, slice 6 (syntax): a bad byte in a key
+expect err_pos("a b = 1") == Ok((1, 3))
+expect err_pos("k\u(E9)y = 1") == Ok((1, 2))
+
+# S-COL4, slice 6 (syntax): a bad byte in a table header
+expect err_pos("[a b]") == Ok((1, 4))
+expect err_pos("[a]x") == Ok((1, 4))
+expect err_pos("[]") == Ok((1, 2))
+
+# S-COL5, slice 6 (syntax): an unclosed string or array at the end of the text is one past the last byte
+expect err_pos("a = \"abc") == Ok((1, 9))
+expect err_pos("a = 1\nb = \"abc") == Ok((2, 9))
+expect err_pos("a = \"\"\"abc") == Ok((1, 11))
+expect err_pos("a = [1, 2") == Ok((1, 10))
+expect err_pos("a = [1,\n") == Ok((2, 1))
+
+# S-COL6, slice 6 (syntax): a missing newline after a value; a bare CR can still start CRLF, so the byte after it is the error
+expect err_pos("a = 1 b = 2") == Ok((1, 7))
+expect err_pos("a = 1\rb = 2") == Ok((1, 7))
+
+# S-COL7, slice 6 (syntax): a control character in a comment
+expect err_pos("# a\u(1)b") == Ok((1, 4))
+
+# S-COL8, slice 6 (rule): a key or a table defined two times: the first byte of the second key
+expect err_pos("a = 1\nb = 2\na = 3\n") == Ok((3, 1))
+expect err_pos("a = 1\n  a = 2") == Ok((2, 3))
+expect err_pos("[t]\nx = 1\n[t]") == Ok((3, 2))
+
+# S-COL9, slice 6 (rule): an integer out of the i64 range: the first byte of the value
+expect err_pos("n = 9223372036854775808") == Ok((1, 5))
+expect err_pos("n = -9223372036854775809") == Ok((1, 5))
+
+# S-COL10, slice 6 (rule): a date that does not exist: the first byte of the value, also in an array
+expect err_pos("d = 2023-02-30") == Ok((1, 5))
+expect err_pos("d = 2023-04-31T00:00:00Z") == Ok((1, 5))
+expect err_pos("a = [1, 2023-02-30]") == Ok((1, 9))
+
+# S-COL11, slice 6 Q18 (rule): a dotted key defined two times: the first byte of the part that is defined again
+expect err_pos("a.b = 1\na.b = 2") == Ok((2, 3))
+expect err_pos("x.y.z = 1\nx.y.z = 2") == Ok((2, 5))
+expect err_pos("[a.b]\n[a.b]") == Ok((2, 4))
+expect err_pos("t = { a.b = 1, a.b = 2 }") == Ok((1, 18))
+
+# S-COL12, slice 6 Q19 (rule): hour 24, minute 60, second 61, an offset of 24 hours: the first byte of the value
+expect err_pos("t = 24:00:00") == Ok((1, 5))
+expect err_pos("t = 12:60:00") == Ok((1, 5))
+expect err_pos("t = 12:00:61") == Ok((1, 5))
+expect err_pos("d = 1979-05-27T07:32:00+24:00") == Ok((1, 5))
+expect err_pos("a = [1, 24:00:00]") == Ok((1, 9))
+
+# S-COL13, slice 6 C2 (syntax): a bad hex digit in a \u or \U escape is at the bad digit
+expect err_pos("a = \"\\u12G4\"") == Ok((1, 10))
+expect err_pos("a = \"\\U0001F6x0\"") == Ok((1, 14))
+expect err_pos("a = 1\nb = \"\\u00ZZ\"") == Ok((2, 10))
+
+# S-COL14, slice 6 C2 (code agent proposal, human to confirm): a surrogate or a code point over U+10FFFF is at the first hex digit
+expect err_pos("a = \"\\uD800\"") == Ok((1, 8))
+expect err_pos("a = \"\\U00110000\"") == Ok((1, 8))
+
+# S-COL15, slice 6 C2 (rule) and RFC 3339 date-mday: November has 30 days, so the column is the start of the value
+expect err_pos("d = 2023-11-31") == Ok((1, 5))
 
 # S-GET1, Toml.get: a key path into nested tables
 expect get("[a.b]\nc = 1", ["a", "b", "c"]) == Ok(int(1))

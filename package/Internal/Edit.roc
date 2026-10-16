@@ -2,15 +2,17 @@ import /Value
 import Doc
 import Print
 import Text
+import Check
 
 ## The span edits. Each edit gives the new text: the old text with the
-## bytes of one span changed (R-H1). The caller parses the new text again.
+## bytes of one span changed. The caller parses the new text again.
 Edit :: [].{
 
 	## The text with the value at `path` replaced.
-	replace : Str, Doc.Index, List(Str), Value -> Try(Str, [NoEntry])
+	replace : Str, Doc.Index, List(Str), Value -> Try(Str, [NoEntry, InvalidValue])
 	replace = |text, index, path, new| {
 		e = find(index, path)?
+		valid(new)?
 		bytes = text.to_utf8()
 		old = slice(bytes, e.value.start, e.value.end)
 		Ok(splice(bytes, e.value.start, e.value.end, value_text(old, new)))
@@ -45,19 +47,24 @@ Edit :: [].{
 	}
 
 	## The text with a new entry for the last key of `path`.
-	insert : Str, Dict(Str, Value), Doc.Index, List(Str), Value -> Try(Str, [KeyExists, NotATable])
+	insert : Str, Dict(Str, Value), Doc.Index, List(Str), Value -> Try(Str, [KeyExists, NotATable, InvalidValue])
 	insert = |text, table, index, path, value|
 		match path {
 			# The empty path names the root table, and the root table is there.
 			[] => Err(KeyExists)
 			_ => {
 				check_insert(table, path.drop_last(1), path.last() ?? "")?
+				valid(value)?
 				Ok(inserted(text.to_utf8(), table, index, path, value))
 			}
 		}
 }
 
 Ent : Doc.Ent
+
+# The path checks come first, then this one (P6-2).
+valid : Value -> Try({}, [InvalidValue])
+valid = |value| if Check.value_ok(value) Ok({}) else Err(InvalidValue)
 
 Span : Doc.Span
 
@@ -138,7 +145,7 @@ line_end = |bytes, pos| {
 	}
 }
 
-# The newline of the first line end in the text, else `\n` (Q7).
+# The newline of the first line end in the text, else `\n`.
 newline_of : List(U8) -> Str
 newline_of = |bytes|
 	match bytes.find_first_index(|b| b == '\n') {
@@ -167,7 +174,7 @@ kind_of = |old|
 		NotString
 	}
 
-# The text of the new value. A new string keeps the kind of an old string when it can (Q6, Q13).
+# The text of the new value. A new string keeps the kind of an old string when it can.
 value_text : List(U8), Value -> Str
 value_text = |old, new|
 	match new {
@@ -188,7 +195,7 @@ ml_basic : Str -> Str
 ml_basic = |s| "\"\"\"${lead(s)}${Text.ml_body(s)}\"\"\""
 
 # TOML trims a newline right after the opening quotes, so a string that
-# starts with a newline gets one more (Q15 proposal).
+# starts with a newline gets one more.
 lead : Str -> Str
 lead = |s| if s.starts_with("\n") "\n" else ""
 
@@ -206,7 +213,7 @@ removed_span = |bytes, bom, e|
 		Line => { start: line_start(bytes, first_key(e), bom), end: line_end(bytes, e.value.end) }
 		Inner(i) =>
 			if i.count == 1 {
-				# The only entry goes with the spaces around it (Q12).
+				# The only entry goes with the spaces around it.
 				{ start: i.open, end: i.close }
 			} else if i.at + 1 < i.count {
 				{ start: first_key(e), end: i.next_start }
@@ -233,7 +240,7 @@ inserted = |bytes, table, index, path, value| {
 	nl = newline_of(bytes)
 	entry = "${Text.key(key)} = ${Value.print(value)}"
 	if bytes.len() == bom {
-		# A new file (Q2): the print of the table.
+		# A new file: the print of the table.
 		Str.from_utf8_lossy(bytes).concat(Print.document(set_at(table, path, value)))
 	} else {
 		match inline_owner(index, parent) {
@@ -298,7 +305,7 @@ is_inline = |e|
 		No => Bool.False
 	}
 
-# In an inline table: `{}` becomes `{ key = value }`, else `, key = value` after the last value (Q3, Q12).
+# In an inline table: `{}` becomes `{ key = value }`, else `, key = value` after the last value.
 in_inline : List(U8), Ent, List(Str), Str, Value -> Str
 in_inline = |bytes, owner, parent, key, value| {
 	pair = "${Text.path(parent.drop_first(owner.path.len()).append(key))} = ${Value.print(value)}"
@@ -308,7 +315,7 @@ in_inline = |bytes, owner, parent, key, value| {
 	}
 }
 
-# The root table (Q11).
+# The root table.
 in_root : List(U8), Doc.Index, Str, Str -> Str
 in_root = |bytes, index, entry, nl|
 	match last_line_entry(index, 0) {
@@ -327,7 +334,7 @@ in_root = |bytes, index, entry, nl|
 			}
 	}
 
-# The `[t]` section of the table (Q1).
+# The `[t]` section of the table.
 section_of : Doc.Index, List(Str) -> Try(U64, [NotFound])
 section_of = |index, path| index.secs.find_first_index(|s| s.path == path and !s.array and s.reach)
 
@@ -344,7 +351,7 @@ after_section = |bytes, index, s, entry, nl|
 last_line_entry : Doc.Index, U64 -> Try(Ent, [NotFound])
 last_line_entry = |index, s| index.ents.keep_if(|e| e.sec == s and on_line(e)).last().map_err(|_| NotFound)
 
-# The last line with a dotted key that makes the table at `parent` (Q3), and
+# The last line with a dotted key that makes the table at `parent`, and
 # the length of the path of its section.
 last_dotted : Doc.Index, List(Str) -> Try({ e : Ent, base : U64 }, [NotFound])
 last_dotted = |index, parent| {
@@ -369,7 +376,7 @@ after_line = |bytes, bom, pos, entry, nl| {
 	splice(bytes, at, at, "${gap}${entry}${nl}")
 }
 
-# A new `[t]` header and the entry at the end of the text (Q2).
+# A new `[t]` header and the entry at the end of the text.
 at_new_header : List(U8), U64, List(Str), Str, Str -> Str
 at_new_header = |bytes, bom, parent, entry, nl| {
 	gap = if ends_open(bytes, bom) "${nl}${nl}" else nl

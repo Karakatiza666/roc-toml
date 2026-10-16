@@ -24,6 +24,7 @@ ins = |text, path, value|
 				Ok(edited) => edited.to_str()
 				Err(KeyExists) => "KeyExists"
 				Err(NotATable) => "NotATable"
+				Err(InvalidValue) => "InvalidValue"
 			}
 
 		Err(_) => "ERR"
@@ -135,6 +136,21 @@ expect
 
 		Err(_) => Bool.False
 	}
+
+# I-INV1, slice 6 (InvalidValue, as for replace): insert of a date that does not exist, in a section, in a new table, and nested
+expect ins("[t]\n", ["t", "d"], Value.LocalDate({ year: 2023, month: 2, day: 30 })) == "InvalidValue"
+expect ins("a = 1\n", ["new", "d"], Value.LocalTime({ hour: 24, minute: 0, second: 0, nanosecond: 0 })) == "InvalidValue"
+expect ins("a = 1\n", ["b"], Value.Array([Value.Table(Dict.from_list([("y", Value.LocalDate({ year: 10000, month: 1, day: 1 }))]))])) == "InvalidValue"
+
+# I-INV4, slice 6 Q17: insert of a nanosecond over 999999999
+expect ins("[t]\n", ["t", "s"], Value.LocalTime({ hour: 1, minute: 2, second: 3, nanosecond: 1000000000 })) == "InvalidValue"
+
+# I-INV2, slice 6: KeyExists and NotATable come before InvalidValue
+expect ins("[t]\nd = 1\n", ["t", "d"], Value.LocalDate({ year: 2023, month: 2, day: 30 })) == "KeyExists"
+expect ins("a = 1\n", ["a", "b"], Value.LocalDate({ year: 2023, month: 2, day: 30 })) == "NotATable"
+
+# I-INV3, slice 6: a valid limit value is inserted as before
+expect ins("[t]\n", ["t", "s"], Value.LocalTime({ hour: 23, minute: 59, second: 60, nanosecond: 0 })) == "[t]\ns = 23:59:60\n"
 
 # DEL1, Q4: the line goes with its same-line comment and its newline
 expect rem("[deps]\njson = \"^2.1\"  # pinned\nhttp = \"^1\"\n", ["deps", "json"]) == "[deps]\nhttp = \"^1\"\n"

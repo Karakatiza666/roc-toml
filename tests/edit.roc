@@ -23,6 +23,7 @@ edit = |text, path, new|
 			match doc.replace(path, new) {
 				Ok(edited) => edited.to_str()
 				Err(NoEntry) => "NoEntry"
+				Err(InvalidValue) => "InvalidValue"
 			}
 
 		Err(_) => "ERR"
@@ -34,6 +35,19 @@ line = |text, path|
 		Ok(doc) => doc.line(path)
 		Err(_) => Err(Bad)
 	}
+
+date : U16, U8, U8 -> { year : U16, month : U8, day : U8 }
+date = |year, month, day| { year, month, day }
+
+time : U8, U8, U8 -> { hour : U8, minute : U8, second : U8, nanosecond : U32 }
+time = |hour, minute, second| { hour, minute, second, nanosecond: 0 }
+
+odt : I16 -> Value
+odt = |offset_minutes| Value.OffsetDateTime({ date: date(2023, 1, 1), time: time(0, 0, 0), offset_minutes })
+
+# A one-line document for the InvalidValue cases
+dd : Str
+dd = "d = 1979-05-27  # c\n"
 
 # E-TXT1, R-H1 (keeps comments, order and formatting): to_str gives the parsed text, byte for byte
 expect {
@@ -134,6 +148,50 @@ expect edit("a.b = 1\n", ["a"], int(2)) == "NoEntry"
 # E-NO4, Toml.replace: NoEntry for a path into an array of tables, and for the empty path
 expect edit("[[p]]\nx = 1\n", ["p", "x"], int(2)) == "NoEntry"
 expect edit("a = 1\n", [], int(2)) == "NoEntry"
+
+# E-INV1, slice 6 (InvalidValue; TOML 1.0.0 dates are RFC 3339: a 4-digit year): a year after 9999
+expect edit(dd, ["d"], Value.LocalDate(date(10000, 1, 1))) == "InvalidValue"
+expect edit(dd, ["d"], Value.LocalDateTime({ date: date(65535, 1, 1), time: time(0, 0, 0) })) == "InvalidValue"
+
+# E-INV2, slice 6 (RFC 3339 date-month, date-mday with leap years): a month or a day that does not exist
+expect edit(dd, ["d"], Value.LocalDate(date(2023, 2, 30))) == "InvalidValue"
+expect edit(dd, ["d"], Value.LocalDate(date(2100, 2, 29))) == "InvalidValue"
+expect edit(dd, ["d"], Value.LocalDate(date(2023, 4, 31))) == "InvalidValue"
+expect edit(dd, ["d"], Value.LocalDate(date(2023, 11, 31))) == "InvalidValue"
+expect edit(dd, ["d"], Value.LocalDate(date(2023, 0, 10))) == "InvalidValue"
+expect edit(dd, ["d"], Value.LocalDate(date(2023, 13, 10))) == "InvalidValue"
+expect edit(dd, ["d"], Value.LocalDate(date(2023, 1, 0))) == "InvalidValue"
+
+# E-INV3, slice 6 (RFC 3339 time-hour 00-23, time-minute 00-59, time-second 00-60): a time out of range
+expect edit(dd, ["d"], Value.LocalTime(time(24, 0, 0))) == "InvalidValue"
+expect edit(dd, ["d"], Value.LocalTime(time(99, 0, 0))) == "InvalidValue"
+expect edit(dd, ["d"], Value.LocalTime(time(100, 0, 0))) == "InvalidValue"
+expect edit(dd, ["d"], Value.LocalTime(time(12, 60, 0))) == "InvalidValue"
+expect edit(dd, ["d"], Value.LocalTime(time(12, 0, 61))) == "InvalidValue"
+
+# E-INV4, slice 6 (RFC 3339 time-numoffset: hour 00-23, minute 00-59): an offset of 24 hours or more
+expect edit(dd, ["d"], odt(1440)) == "InvalidValue"
+expect edit(dd, ["d"], odt(-1440)) == "InvalidValue"
+expect edit(dd, ["d"], odt(6000)) == "InvalidValue"
+
+# E-INV5, slice 6: the check looks into arrays and inline tables
+expect edit(dd, ["d"], Value.Array([int(1), Value.LocalDate(date(2023, 2, 30))])) == "InvalidValue"
+expect edit(dd, ["d"], Value.Table(Dict.from_list([("a", Value.Array([Value.LocalTime(time(24, 0, 0))]))]))) == "InvalidValue"
+
+# E-INV6, slice 6: the limits themselves are valid, and the edit is as before
+expect edit(dd, ["d"], Value.LocalDate(date(9999, 12, 31))) == "d = 9999-12-31  # c\n"
+expect edit(dd, ["d"], Value.LocalDate(date(2024, 2, 29))) == "d = 2024-02-29  # c\n"
+expect edit(dd, ["d"], Value.LocalDateTime({ date: date(0, 1, 1), time: time(23, 59, 60) })) == "d = 0000-01-01T23:59:60  # c\n"
+expect edit(dd, ["d"], odt(1439)) == "d = 2023-01-01T00:00:00+23:59  # c\n"
+expect edit(dd, ["d"], odt(-1439)) == "d = 2023-01-01T00:00:00-23:59  # c\n"
+
+# E-INV8, slice 6 Q17: a nanosecond over 999999999 is InvalidValue; 999999999 is valid
+expect edit(dd, ["d"], Value.LocalTime({ hour: 0, minute: 0, second: 0, nanosecond: 1000000000 })) == "InvalidValue"
+expect edit(dd, ["d"], Value.OffsetDateTime({ date: date(2023, 1, 1), time: { hour: 0, minute: 0, second: 0, nanosecond: 4294967295 }, offset_minutes: 0 })) == "InvalidValue"
+expect edit(dd, ["d"], Value.LocalTime({ hour: 0, minute: 0, second: 0, nanosecond: 999999999 })) == "d = 00:00:00.999999999  # c\n"
+
+# E-INV7, slice 6: NoEntry comes before InvalidValue
+expect edit(dd, ["x"], Value.LocalDate(date(2023, 2, 30))) == "NoEntry"
 
 # E-LINE1, Toml.line: the line of the key of an entry
 expect line("# c\n[deps]\njson = 1\n", ["deps", "json"]) == Ok(3)

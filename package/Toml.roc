@@ -7,20 +7,30 @@ import Internal/Edit as Edit
 ## (`replace`) changes only the bytes of one value and keeps all other bytes:
 ## comments, order, blank lines and the form of each value.
 ##
-## An edit writes `Value.print` text. A date or time with a field out of
-## range (`2023-02-30`) is written as it is, and the edited document reads it.
-## A field with more digits than TOML gives it (a year after 9999, a month,
-## day, hour, minute or second over 99, an offset of 100 hours or more) has
-## no TOML text: an edit with such a value crashes.
+## An edit writes `Value.print` text. `replace` and `insert` give
+## `InvalidValue`, and change nothing, when the new value has a date or time
+## that `parse` would reject as TOML text: a year after 9999, a month out of
+## 1 to 12, a day that the month does not have (with leap years), an hour
+## over 23, a minute over 59, a second over 60, or an offset of 24 hours or
+## more. A nanosecond over 999999999 is `InvalidValue` too: its text has
+## more than 9 digits, and `parse` reads another value. The check also looks
+## into arrays and inline tables.
 Toml :: { text : Str, table : Dict(Str, Value), index : Doc.Index }.{
 
-	## Parses TOML 1.0.0 text. Invalid text gives an error with the 1-based
-	## line and column (in bytes) where the parser stopped, and a message.
+	## Parses TOML 1.0.0 text. Invalid text gives an error with a 1-based line
+	## and column, and a message. The column counts bytes, and on line 1 also
+	## the bytes of a byte order mark.
+	##
+	## | Error | Column |
+	## | --- | --- |
+	## | Syntax | The first byte at which the text can no longer be the start of a valid TOML document. At the end of the text: one past the last byte. |
+	## | A rule: a key or a table defined two times, an integer out of the i64 range, a date or time out of range (also hour 24, minute 60, second 61, an offset of 24 hours) | The first byte of the key or the value that breaks the rule. For a dotted key, the first byte of the part that is defined again: `b` in `a.b`. |
+	##
 	## A value with more than 128 levels of arrays and inline tables is an
 	## error too: the parse would use too much stack.
 	parse : Str -> Try(Toml, [TomlErr({ line : U64, column : U64, message : Str })])
 	parse = |text|
-		match Doc.read(text, Bool.True) {
+		match Doc.read(text) {
 			Ok({ table, index }) => Ok({ text, table, index })
 			Err(e) => Err(TomlErr(e))
 		}
@@ -45,6 +55,8 @@ Toml :: { text : Str, table : Dict(Str, Value), index : Doc.Index }.{
 	## Each line ends with `\n`. The empty table gives the empty text.
 	##
 	## The text parses back to an equal table when each date in it exists.
+	## A date or time that `Toml.parse` would reject is printed with its
+	## digits, and the output does not parse.
 	print : Dict(Str, Value) -> Str
 	print = |t| Print.document(t)
 
@@ -74,7 +86,9 @@ Toml :: { text : Str, table : Dict(Str, Value), index : Doc.Index }.{
 	##
 	## `NoEntry` when the path names no entry: a missing key, a table that a
 	## header or a dotted key makes, a path into an array, or the empty path.
-	replace : Toml, List(Str), Value -> Try(Toml, [NoEntry])
+	## `InvalidValue` when the new value has a date or time that TOML cannot
+	## write (see `Toml`). The `NoEntry` check comes first.
+	replace : Toml, List(Str), Value -> Try(Toml, [NoEntry, InvalidValue])
 	replace = |doc, path, new| Edit.replace(doc.text, doc.index, path, new).map_ok(reread)
 
 	## The 1-based line of the first byte of the key of the entry at the key
@@ -103,8 +117,9 @@ Toml :: { text : Str, table : Dict(Str, Value), index : Doc.Index }.{
 	##
 	## `KeyExists` when the key is there (use `replace`), and for the empty
 	## path (the root table is there). `NotATable` when the path goes through a
-	## value that is not a table, or into an array of tables.
-	insert : Toml, List(Str), Value -> Try(Toml, [KeyExists, NotATable])
+	## value that is not a table, or into an array of tables. `InvalidValue` as
+	## for `replace`, after the other checks.
+	insert : Toml, List(Str), Value -> Try(Toml, [KeyExists, NotATable, InvalidValue])
 	insert = |doc, path, value| Edit.insert(doc.text, doc.table, doc.index, path, value).map_ok(reread)
 
 	## Removes the entry at the key path. The lines of the entry go, with the
@@ -142,11 +157,11 @@ lookup = |value, path|
 			}
 	}
 
-# The document of an edited text. A date or time with a field out of range
-# is not an error here, because `Value.print` writes such a value.
+# The document of an edited text. The edits write only values that pass
+# `Check.value_ok`, so the text parses.
 reread : Str -> Toml
 reread = |text|
-	match Doc.read(text, Bool.False) {
+	match Doc.read(text) {
 		Ok({ table, index }) => { text, table, index }
-		Err(e) => crash "roc-toml: the edited text does not parse (line ${e.line.to_str()}: ${e.message})"
+		Err(e) => crash "roc-toml bug: the edited text does not parse (line ${e.line.to_str()}: ${e.message})"
 	}

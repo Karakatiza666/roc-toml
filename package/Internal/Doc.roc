@@ -37,12 +37,11 @@ Doc :: [].{
 	## of the byte order mark (3 or 0).
 	Index : { bom : U64, secs : List(Sec), ents : List(Ent) }
 
-	## Parses the text. When `strict` is False, a date or time with a field
-	## out of range is not an error (the edits use this to read their text).
-	read : Str, Bool -> Try({ table : Dict(Str, Value), index : Index }, { line : U64, column : U64, message : Str })
-	read = |text, strict| {
+	## Parses the text.
+	read : Str -> Try({ table : Dict(Str, Value), index : Index }, { line : U64, column : U64, message : Str })
+	read = |text| {
 		bytes = text.to_utf8()
-		match build(bytes, strict) {
+		match build(bytes) {
 			Ok(done) => Ok(done)
 			Err({ offset, message }) => Err({ line: Doc.line_of(bytes, offset), column: column_of(bytes, offset), message })
 		}
@@ -67,8 +66,8 @@ column_of = |bytes, offset|
 bom_size : List(U8) -> U64
 bom_size = |bytes| if bytes.starts_with([0xEF, 0xBB, 0xBF]) 3 else 0
 
-build : List(U8), Bool -> Try({ table : Dict(Str, Value), index : Doc.Index }, Problem)
-build = |bytes, strict| {
+build : List(U8) -> Try({ table : Dict(Str, Value), index : Doc.Index }, Problem)
+build = |bytes| {
 	total = bytes.len()
 	bom = bom_size(bytes)
 	check_depth(bytes, bom)?
@@ -82,15 +81,15 @@ build = |bytes, strict| {
 		match item {
 			Head(h) => {
 				path = names(h.keys)
-				$tree = Tree.header($tree, path, h.array) ? |m| { offset: total - h.start, message: m }
+				$tree = Tree.header($tree, path, h.array) ? |e| { offset: part_start(h.keys, e.at, total - h.start, total), message: e.message }
 				$section = path
 				$sid = $sid + 1
 				$secs = $secs.append({ path, array: h.array, start: total - h.start, end: total - h.end, reach: Bool.False })
 			}
 
 			Pair(p) => {
-				v = node_value(p.node, strict, total)?
-				$tree = Tree.entry($tree, $section, names(p.keys), v, $sid) ? |m| { offset: key_start(p, total), message: m }
+				v = node_value(p.node, total)?
+				$tree = Tree.entry($tree, $section, names(p.keys), v, $sid) ? |e| { offset: part_start(p.keys, e.at, key_start(p, total), total), message: e.message }
 				$ents = $ents.concat(entries_of(p, $section, $sid, Line, total))
 			}
 
@@ -108,6 +107,10 @@ build = |bytes, strict| {
 
 names : List({ name : Str, start : U64, end : U64 }) -> List(Str)
 names = |keys| keys.map(|k| k.name)
+
+# The offset of key part `at`, or `fallback` when there is no such part.
+part_start : List({ name : Str, start : U64, end : U64 }), U64, U64, U64 -> U64
+part_start = |keys, at, fallback, total| keys.get(at).map_ok(|k| total - k.start) ?? fallback
 
 key_start : Pair, U64 -> U64
 key_start = |p, total|
@@ -127,21 +130,21 @@ reaches = |table, path|
 			}
 	}
 
-node_value : Grammar.Node, Bool, U64 -> Try(Value, Problem)
-node_value = |node, strict, total|
+node_value : Grammar.Node, U64 -> Try(Value, Problem)
+node_value = |node, total|
 	match node.form {
 		Scalar(v) => Ok(v)
-		Odd(v, m) => if strict Err({ offset: total - node.start, message: m }) else Ok(v)
-		Arr(nodes) => nodes.map_try(|n| node_value(n, strict, total)).map_ok(|vs| Value.Array(vs))
-		Inl(pairs) => inline_value(pairs, strict, total)
+		Odd(_, m) => Err({ offset: total - node.start, message: m })
+		Arr(nodes) => nodes.map_try(|n| node_value(n, total)).map_ok(|vs| Value.Array(vs))
+		Inl(pairs) => inline_value(pairs, total)
 	}
 
-inline_value : List(Pair), Bool, U64 -> Try(Value, Problem)
-inline_value = |pairs, strict, total| {
+inline_value : List(Pair), U64 -> Try(Value, Problem)
+inline_value = |pairs, total| {
 	var $tree = Tree.root
 	for p in pairs {
-		v = node_value(p.node, strict, total)?
-		$tree = Tree.entry($tree, [], names(p.keys), v, 0) ? |m| { offset: key_start(p, total), message: m }
+		v = node_value(p.node, total)?
+		$tree = Tree.entry($tree, [], names(p.keys), v, 0) ? |e| { offset: part_start(p.keys, e.at, key_start(p, total), total), message: e.message }
 	}
 	Ok(Tree.to_value($tree))
 }
