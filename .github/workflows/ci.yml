@@ -1,0 +1,153 @@
+name: CI
+
+# L0 (roc check, roc test) and L1 (roc-fuzz) of TESTING.md for one generic
+# package repository (R-GP5). Template: see README.md next to this file.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Paths and limits. Change them here only.
+env:
+  # The pinned nightly, the same as .roc-version. A release in roc-lang/nightlies.
+  ROC_NIGHTLY: nightly-2026-10-14-38a3029
+  # The package entry point.
+  PACKAGE_MAIN: package/main.roc
+  # The L0 test apps. Each one is a separate roc test run.
+  TEST_GLOB: tests/*.roc
+  # The dirs that roc fmt --check reads.
+  FMT_PATHS: package tests fuzz
+  # Each *.roc file in this directory with an app header is one fuzz target.
+  FUZZ_DIR: fuzz
+  # Fixed run count and seed (TESTING.md 1, L1).
+  FUZZ_RUNS: "100000"
+  FUZZ_SEED: "1"
+
+jobs:
+  check-test:
+    name: Check and test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-26]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the pinned Roc nightly
+        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+        with:
+          version: nightly-new-compiler
+          nightly-tag: ${{ env.ROC_NIGHTLY }}
+
+      - name: Require the pinned compiler
+        run: roc version | grep -F "$ROC_NIGHTLY"
+
+      - name: roc check
+        run: roc check "$PACKAGE_MAIN"
+
+      - name: roc fmt --check
+        run: |
+          # shellcheck disable=SC2086
+          roc fmt --check $FMT_PATHS
+
+      - name: roc test
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=($TEST_GLOB)
+          if ((${#files[@]} == 0)); then
+            echo "::error::No L0 test app matches $TEST_GLOB"
+            exit 1
+          fi
+          for file in "${files[@]}"; do
+            echo "::group::$file"
+            roc test "$file"
+            echo "::endgroup::"
+          done
+
+  fuzz:
+    name: Fuzz (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # TESTING.md 4: L1 runs on Linux.
+        os: [ubuntu-24.04]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the pinned Roc nightly
+        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+        with:
+          version: nightly-new-compiler
+          nightly-tag: ${{ env.ROC_NIGHTLY }}
+
+      - name: Require the pinned compiler
+        run: roc version | grep -F "$ROC_NIGHTLY"
+
+      # Builds and runs every target, then fails if one target failed.
+      - name: Build and run the fuzz targets
+        env:
+          ARTIFACT_ROOT: ${{ runner.temp }}/fuzz-artifacts
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          targets=()
+          for file in "$FUZZ_DIR"/*.roc; do
+            # A helper module has no app header, so it is not a target.
+            if grep -qE '^app[[:space:]]*\[' "$file"; then
+              targets+=("$(basename "$file" .roc)")
+            fi
+          done
+          if ((${#targets[@]} == 0)); then
+            echo "::error::No fuzz target (app header) in $FUZZ_DIR/*.roc (R-GP5 needs L1)"
+            exit 1
+          fi
+          failed=()
+          cd "$FUZZ_DIR"
+          for target in "${targets[@]}"; do
+            echo "::group::$target"
+            if roc build --fuzz "$target.roc" \
+              && "./$target" run --runs="$FUZZ_RUNS" --seed="$FUZZ_SEED" --time=0 \
+                --artifact-dir="$ARTIFACT_ROOT/$target"; then
+              echo "::endgroup::"
+            else
+              echo "::endgroup::"
+              echo "::error::Fuzz target $target failed"
+              failed+=("$target")
+            fi
+          done
+          if ((${#failed[@]} > 0)); then
+            echo "Failed targets: ${failed[*]}" >&2
+            exit 1
+          fi
+
+      # Replay a saved input with: ./<target> replay <file>
+      - name: Upload the saved failures
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: fuzz-failures-${{ matrix.os }}
+          path: ${{ runner.temp }}/fuzz-artifacts
+          if-no-files-found: ignore
+          retention-days: 14

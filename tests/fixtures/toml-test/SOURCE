@@ -1,0 +1,10 @@
+Source:  https://github.com/toml-lang/toml-test
+Tag:     v2.2.0
+Commit:  ce08da1ddb075d1c7596d663c7fcba9a2ae02c5c (2026-04-30)
+License: MIT, see LICENSE in this directory ("Copyright (c) 2018 TOML authors").
+Files:   the 884 files that tests/files-toml-1.0.0 of that commit lists
+         (205 valid cases with their .json, 474 invalid cases), with no change.
+         files-toml-1.0.0 is the list itself.
+Use:     scripts/gen-toml-test.py reads them and writes
+         tests/toml_test_valid.roc, tests/toml_test_invalid.roc and
+         tests/toml_test_roundtrip.roc. Do not edit those 3 files by hand.

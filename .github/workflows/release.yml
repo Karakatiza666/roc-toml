@@ -1,0 +1,265 @@
+name: Release
+
+# Run by hand with a version to publish a release (R-GP2):
+#   gh workflow run release.yml --ref main -f release_version=X.Y.Z
+# A pull request runs the same build and tests as a dry run, and publishes
+# nothing. The structure is the "Minimal Package Release" of
+# roc-lang/release-package README.md. Template: see README.md next to this file.
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: "Release version X.Y.Z, for example 0.1.0 (no v prefix, no -rc suffix)"
+        required: true
+        type: string
+  pull_request:
+
+permissions: {}
+
+# Serialize release runs in one group; PR validation runs get per-ref groups
+# so they never cancel a queued release run.
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && format('release-{0}', github.repository) || format('release-validate-{0}-{1}', github.repository, github.ref) }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
+# Paths and runners. Change them here only.
+env:
+  # The pinned nightly, the same as .roc-version. A release in roc-lang/nightlies.
+  ROC_NIGHTLY: nightly-2026-10-14-38a3029
+  # The package directory and its entry point.
+  PACKAGE_DIR: package
+  PACKAGE_MAIN: package/main.roc
+  # The L0 test apps. Each one is a separate roc test run.
+  TEST_GLOB: tests/*.roc
+  # roc bundle writes here. Nothing else may put a .tar.zst here.
+  BUNDLE_DIR: dist
+  # Runners that test the bundle: Linux x86-64 and macOS arm64.
+  TEST_OS_JSON: '["ubuntu-24.04","macos-26"]'
+
+jobs:
+  build:
+    name: Build release bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      release_version: ${{ steps.validate.outputs.release_version }}
+      test_matrix: ${{ steps.bundles.outputs.test_matrix }}
+    steps:
+      - name: Require the default branch for publication
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: test "$GITHUB_REF_TYPE" = branch && test "$GITHUB_REF_NAME" = "$DEFAULT_BRANCH" || { echo "Releases must run from the default branch" >&2; exit 1; }
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install the pinned Roc nightly
+        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+        with:
+          version: nightly-new-compiler
+          nightly-tag: ${{ env.ROC_NIGHTLY }}
+
+      - name: Require the pinned compiler
+        run: roc version | grep -F "$ROC_NIGHTLY"
+
+      # Rejects v1.2.3, 1.2, 1.2.3+build, 0.0.0, and a tag or release that
+      # exists. A pull request uses the dry-run version 999.999.999.
+      - name: Validate release request
+        id: validate
+        uses: roc-lang/release-package/actions/validate-release@af2f0cd8662874b825ff3917f4286e793ba18c55
+        with:
+          release_version: ${{ github.event_name == 'workflow_dispatch' && inputs.release_version || '' }}
+          dry_run: ${{ github.event_name != 'workflow_dispatch' }}
+          github_token: ${{ github.token }}
+
+      # validate-release accepts 1.2.3-rc1 and publish-release then marks the
+      # release as a prerelease. R-GP2 needs X.Y.Z only.
+      - name: Require a stable X.Y.Z version
+        env:
+          IS_PRERELEASE: ${{ steps.validate.outputs.is_prerelease }}
+        run: test "$IS_PRERELEASE" = false || { echo "Release version must be X.Y.Z with no prerelease suffix" >&2; exit 1; }
+
+      - name: roc check and roc test
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          roc check "$PACKAGE_MAIN"
+          files=($TEST_GLOB)
+          ((${#files[@]} > 0)) || { echo "No L0 test app matches $TEST_GLOB" >&2; exit 1; }
+          for file in "${files[@]}"; do
+            roc test "$file"
+          done
+
+      # Empty URL when the repository has no release yet.
+      - name: Resolve previous stable release
+        id: previous
+        if: github.event_name == 'workflow_dispatch'
+        uses: roc-lang/release-package/actions/resolve-previous-release@af2f0cd8662874b825ff3917f4286e793ba18c55
+        with:
+          github_token: ${{ github.token }}
+
+      - name: Check API version bump
+        uses: roc-lang/release-package/actions/run-bump-check@af2f0cd8662874b825ff3917f4286e793ba18c55
+        with:
+          release_version: ${{ steps.validate.outputs.release_version }}
+          dry_run: ${{ steps.validate.outputs.is_dry_run }}
+          # A first release has no baseline. Once one exists, failures block publication.
+          bump_check: ${{ steps.previous.outputs.previous_url != '' && 'require' || 'warn' }}
+          bump_entrypoint: ${{ env.PACKAGE_MAIN }}
+          previous_url: ${{ steps.previous.outputs.previous_url }}
+
+      # roc bundle names the file <base58 BLAKE3 of the file>.tar.zst.
+      # main.roc first, then every other module of the package.
+      - name: Bundle package
+        run: |
+          set -euo pipefail
+          rm -rf "$BUNDLE_DIR"
+          mkdir -p "$BUNDLE_DIR"
+          out="$(cd "$BUNDLE_DIR" && pwd)"
+          main="$(basename "$PACKAGE_MAIN")"
+          cd "$PACKAGE_DIR"
+          files=("$main")
+          while IFS= read -r -d '' file; do
+            files+=("${file#./}")
+          done < <(find . -type f -name '*.roc' ! -path "./$main" -print0)
+          roc bundle "${files[@]}" --output-dir "$out"
+
+      - name: Prepare bundle metadata and test matrix
+        id: bundles
+        uses: roc-lang/release-package/actions/prepare-bundles@af2f0cd8662874b825ff3917f4286e793ba18c55
+        with:
+          bundle_glob: ${{ env.BUNDLE_DIR }}/*.tar.zst
+          test_os_json: ${{ env.TEST_OS_JSON }}
+
+      - name: Require exactly one bundle with a base58 hash name
+        run: |
+          set -euo pipefail
+          jq -e 'length == 1' .release/release-bundles.json
+          name="$(jq -r '.[0].artifact_file' .release/release-bundles.json)"
+          [[ "$name" =~ ^[1-9A-HJ-NP-Za-km-z]{43,44}\.tar\.zst$ ]] || { echo "Bundle name is not <base58>.tar.zst: $name" >&2; exit 1; }
+
+      - name: Upload release bundles
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: release-bundles
+          path: .release/bundles/*.tar.zst
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload release metadata
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: release-metadata
+          path: |
+            .release/bump-output.txt
+            .release/previous-url.txt
+            .release/release-bundles.json
+            .release/test-matrix.json
+          if-no-files-found: error
+          retention-days: 7
+
+  test-bundles:
+    name: Test ${{ matrix.bundle_name }} bundle (${{ matrix.os }})
+    needs: build
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.build.outputs.test_matrix) }}
+    steps:
+      - name: Install the pinned Roc nightly
+        uses: roc-lang/setup-roc@f5a74bf90aa694b43ab4a7cbfdb19273bc6aa697
+        with:
+          version: nightly-new-compiler
+          nightly-tag: ${{ env.ROC_NIGHTLY }}
+
+      - name: Download release bundles
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: release-bundles
+          path: .release/test-bundles
+
+      # test-bundle appends the absolute bundle path to the last line.
+      # roc unbundle fails when the file name is not the hash of the file.
+      - name: Test the bundle as files a user downloads
+        uses: roc-lang/release-package/actions/test-bundle@af2f0cd8662874b825ff3917f4286e793ba18c55
+        with:
+          test_bundle_command: |
+            check_bundle() {
+              dir="$RUNNER_TEMP/unbundled"
+              rm -rf "$dir" && mkdir -p "$dir" && cd "$dir"
+              roc unbundle "$1"
+              pkg="$dir/$(basename "$1" .tar.zst)"
+              roc check "$pkg/main.roc"
+              roc test "$pkg/main.roc"
+            }
+            check_bundle
+          bundle_path: .release/test-bundles/${{ matrix.artifact_file }}
+          bundle_name: ${{ matrix.bundle_name }}
+          release_version: ${{ needs.build.outputs.release_version }}
+
+  publish:
+    name: Publish GitHub release
+    needs:
+      - build
+      - test-bundles
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      # publish-release runs git tag and git push origin: keep the credentials.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Download release bundles
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: release-bundles
+          path: .release/bundles
+
+      - name: Download release metadata
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: release-metadata
+          path: .release
+
+      - name: Make release notes
+        uses: roc-lang/release-package/actions/make-release-notes@af2f0cd8662874b825ff3917f4286e793ba18c55
+        with:
+          release_version: ${{ needs.build.outputs.release_version }}
+          github_token: ${{ github.token }}
+
+      # One gh release create call with all assets: not a draft, and not a
+      # prerelease for X.Y.Z. No additional_assets, so one .tar.zst only.
+      - name: Publish release
+        uses: roc-lang/release-package/actions/publish-release@af2f0cd8662874b825ff3917f4286e793ba18c55
+        with:
+          release_version: ${{ needs.build.outputs.release_version }}
+          github_token: ${{ github.token }}
+
+      - name: Verify the published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.build.outputs.release_version }}
+        run: |
+          set -euo pipefail
+          expected="$(jq -r '.[0].artifact_file' .release/release-bundles.json)"
+          gh release view "$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" \
+            --json tagName,isDraft,isPrerelease,assets > .release/published.json
+          jq -e --arg v "$RELEASE_VERSION" --arg a "$expected" '
+            .tagName == $v
+            and .isDraft == false
+            and .isPrerelease == false
+            and ([.assets[].name | select(endswith(".tar.zst"))] == [$a])
+          ' .release/published.json
