@@ -21,7 +21,7 @@ Toml :: { text : Str, table : Dict(Str, Value), index : Doc.Index }.{
 	parse : Str -> Try(Toml, [TomlErr({ line : U64, column : U64, message : Str })])
 	parse = |text|
 		match Doc.read(text, Bool.True) {
-			Ok({ table, index }) => Ok({ text, table, index })
+			Ok({ table: root, index }) => Ok({ text, table: root, index })
 			Err(e) => Err(TomlErr(e))
 		}
 
