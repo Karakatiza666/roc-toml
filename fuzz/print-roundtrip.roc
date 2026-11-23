@@ -1,5 +1,5 @@
 app [target] {
-	fuzz: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.4.3/41NK5FShyGC9Z8HNpUdUeXMWwLmLNfFxsfmLvdPL4Fxb.tar.zst",
+	fuzz: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.7.0/HBigHQhVZWEF2EkLxpYK35u8P6UNsAmPYxpNFTxXK1Br.tar.zst",
 	pkg: "../package/main.roc",
 }
 
@@ -8,6 +8,7 @@ import pkg.Toml
 
 ## F-ROUND, TESTING.md 4: for each text that parses, parse(print(table)) == table
 target = Fuzz.target_with({
+	examples: [],
 	name: "print-roundtrip",
 	generator: Fuzz.str,
 	test: |text|

@@ -9,6 +9,8 @@ HERE=$(cd "$(dirname "$0")/.." && pwd)
 ROC=${1:-roc}
 FUZZ_ROC=${2:-$ROC}
 RUNS=${RUNS:-100000}
+# The time limit of one fuzz run in seconds: a run that reaches it ends and passes (roc-fuzz 0.7.0).
+FUZZ_TIME=${FUZZ_TIME:-120}
 cd "$HERE"
 W=$HERE/.work
 mkdir -p "$W/fuzz"
@@ -46,13 +48,13 @@ for f in fuzz/*.roc; do
 		FAIL=1
 		continue
 	fi
-	rm -rf "$W/fuzz/art-$n"
-	if "$W/fuzz/$n" run --runs="$RUNS" --seed=1 --time=0 \
+	rm -rf "$W/fuzz/rep-$n"
+	if "$W/fuzz/$n" run --runs="$RUNS" --seed=1 --time="$FUZZ_TIME" \
 		--dictionary=fuzz/dictionaries/toml.dict \
-		--artifact-dir="$W/fuzz/art-$n" >"$W/fuzz/$n.log" 2>&1; then
-		echo "PASS fuzz $n ($(grep -m1 '^Done' "$W/fuzz/$n.log"))"
+		--report-dir="$W/fuzz/rep-$n" >"$W/fuzz/$n.log" 2>&1; then
+		echo "PASS fuzz $n ($(grep -m1 'exploration' "$W/fuzz/$n.log"))"
 	else
-		echo "FAIL fuzz $n (exit $?, see $W/fuzz/$n.log and $W/fuzz/art-$n)"
+		echo "FAIL fuzz $n (exit $?, see $W/fuzz/$n.log and $W/fuzz/rep-$n)"
 		FAIL=1
 	fi
 done

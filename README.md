@@ -58,7 +58,7 @@ expect {
 | Layer | Files | Tool |
 | --- | --- | --- |
 | L0 | `tests/*.roc`. Hand cases from the TOML 1.0.0 text, and the TOML 1.0.0 cases of [toml-test](https://github.com/toml-lang/toml-test) v2.2.0 (MIT license, in `tests/fixtures/toml-test/` with its `LICENSE` and `SOURCE`). `scripts/gen-toml-test.py` makes the 3 `tests/toml_test_*.roc` files. | `roc test` |
-| L1 | `fuzz/*.roc` (properties: parse never crashes, print round trip, text kept, replace and remove change only their entry) | [roc-fuzz](https://github.com/lukewilliamboswell/roc-fuzz) 0.4.3 |
+| L1 | `fuzz/*.roc` (properties: parse never crashes, print round trip, text kept, replace and remove change only their entry) | [roc-fuzz](https://github.com/lukewilliamboswell/roc-fuzz) 0.7.0 |
 
 `scripts/test.sh [ROC [FUZZ_ROC]]` runs `roc check`, `roc fmt --check`, the L0 tests and the L1 targets. Use the nightly in `.roc-version`. CI (`.github/workflows/ci.yml`) runs the same checks on that nightly.
 

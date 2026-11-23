@@ -29,6 +29,9 @@ env:
   # Fixed run count and seed (TESTING.md 1, L1).
   FUZZ_RUNS: "100000"
   FUZZ_SEED: "1"
+  # The time limit of one target in seconds. A run that reaches it ends and passes,
+  # so the 30 min job limit holds also when FUZZ_RUNS takes longer.
+  FUZZ_TIME: "120"
 
 jobs:
   check-test:
@@ -128,8 +131,8 @@ jobs:
           for target in "${targets[@]}"; do
             echo "::group::$target"
             if roc build --fuzz "$target.roc" \
-              && "./$target" run --runs="$FUZZ_RUNS" --seed="$FUZZ_SEED" --time=0 \
-                --artifact-dir="$ARTIFACT_ROOT/$target"; then
+              && "./$target" run --runs="$FUZZ_RUNS" --seed="$FUZZ_SEED" --time="$FUZZ_TIME" \
+                --report-dir="$ARTIFACT_ROOT/$target"; then
               echo "::endgroup::"
             else
               echo "::endgroup::"

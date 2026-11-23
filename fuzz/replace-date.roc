@@ -1,5 +1,5 @@
 app [target] {
-	fuzz: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.4.3/41NK5FShyGC9Z8HNpUdUeXMWwLmLNfFxsfmLvdPL4Fxb.tar.zst",
+	fuzz: platform "https://github.com/lukewilliamboswell/roc-fuzz/releases/download/0.7.0/HBigHQhVZWEF2EkLxpYK35u8P6UNsAmPYxpNFTxXK1Br.tar.zst",
 	pkg: "../package/main.roc",
 }
 
@@ -8,6 +8,9 @@ import pkg.Toml
 import pkg.Value
 
 Input := { a : U64, b : U64, c : U64 }.{
+	parser_for : _
+	encoder_for : _
+
 	generator_for : Fuzz.FuzzEncoding -> Fuzz.Generator(Input)
 	generator_for = |_| { a: Fuzz.u64, b: Fuzz.u64, c: Fuzz.u64 }.Fuzz
 }
@@ -115,6 +118,7 @@ same = |edited, expected| {
 }
 
 target = Fuzz.target_with({
+	examples: [],
 	name: "replace-date",
 	generator: Input.generator_for(Default),
 	test,

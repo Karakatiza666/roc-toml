@@ -1,8 +1,10 @@
 # Changelog
 
-## 0.2.0 (not released)
+## 0.2.0
 
-Planned asset: `H3F7MuifYcAb8FLdZ1ccrEikjYKr6BSpwtsvFz2kWztq.tar.zst` (`roc bundle` on `nightly-2026-10-14-38a3029`). The release workflow makes the real asset. Check that its name is the same.
+Built and tested with `nightly-2026-11-13-03dce41` (`.roc-version`). The release workflow makes the asset; its name is in the release notes and the README.
+
+The package has no warning on `nightly-2026-11-13-03dce41` (no local name shadows a top-level name). The fuzz targets use roc-fuzz 0.7.0.
 
 This version changes the API. A `match` on the errors of `replace` or `insert` must have an `InvalidValue` branch.
 
