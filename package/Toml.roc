@@ -31,7 +31,7 @@ Toml :: { text : Str, table : Dict(Str, Value), index : Doc.Index }.{
 	parse : Str -> Try(Toml, [TomlErr({ line : U64, column : U64, message : Str })])
 	parse = |text|
 		match Doc.read(text) {
-			Ok({ table, index }) => Ok({ text, table, index })
+			Ok({ table: root, index }) => Ok({ text, table: root, index })
 			Err(e) => Err(TomlErr(e))
 		}
 
@@ -162,6 +162,6 @@ lookup = |value, path|
 reread : Str -> Toml
 reread = |text|
 	match Doc.read(text) {
-		Ok({ table, index }) => { text, table, index }
+		Ok({ table: root, index }) => { text, table: root, index }
 		Err(e) => crash "roc-toml bug: the edited text does not parse (line ${e.line.to_str()}: ${e.message})"
 	}

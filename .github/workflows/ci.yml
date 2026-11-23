@@ -17,7 +17,7 @@ concurrency:
 # Paths and limits. Change them here only.
 env:
   # The pinned nightly, the same as .roc-version. A release in roc-lang/nightlies.
-  ROC_NIGHTLY: nightly-2026-10-14-38a3029
+  ROC_NIGHTLY: nightly-2026-11-13-03dce41
   # The package entry point.
   PACKAGE_MAIN: package/main.roc
   # The L0 test apps. Each one is a separate roc test run.
