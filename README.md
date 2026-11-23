@@ -27,7 +27,7 @@
 Add the release to the header of your app, package or platform:
 
 ```roc
-toml: "https://github.com/Karakatiza666/roc-toml/releases/download/0.1.0/3icmtKz6XQUyHqu5JftcoJJT6a9YTND1B8z1UAmtqJpN.tar.zst",
+toml: "https://github.com/Karakatiza666/roc-toml/releases/download/0.2.0/2jDX3pSSC7cpPb3iuoemnX1BkYJfsxQTHB2p2vBsUzz7.tar.zst",
 ```
 
 Then:
