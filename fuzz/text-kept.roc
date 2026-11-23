@@ -13,7 +13,7 @@ target = Fuzz.target_with({
 	test: |text|
 		match Toml.parse(text) {
 			Err(_) => Fuzz.keep
-			Ok(doc) => if doc.to_str() == text Fuzz.keep else crash "to_str is not the parsed text"
+			Ok(doc) => if (doc.to_str() == text) Fuzz.keep else crash "to_str is not the parsed text"
 		},
 	show: Str.inspect,
 })

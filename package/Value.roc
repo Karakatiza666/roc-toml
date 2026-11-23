@@ -96,7 +96,7 @@ print_value = |value|
 		String(s) => Text.basic(s)
 		Integer(n) => n.to_str()
 		Float(f) => print_float(f)
-		Boolean(b) => if b "true" else "false"
+		Boolean(b) => if (b) "true" else "false"
 		OffsetDateTime({ date, time, offset_minutes }) => "${print_date(date)}T${print_time(time)}${print_offset(offset_minutes)}"
 		LocalDateTime({ date, time }) => "${print_date(date)}T${print_time(time)}"
 		LocalDate(date) => print_date(date)
@@ -119,10 +119,10 @@ print_float = |f|
 	if f.is_nan() {
 		"nan"
 	} else if f.is_infinite() {
-		if f > 0 "inf" else "-inf"
+		if (f > 0) "inf" else "-inf"
 	} else {
 		s = f.to_str()
-		if s.contains(".") or s.contains("e") s else "${s}.0"
+		if (s.contains(".") or s.contains("e")) s else "${s}.0"
 	}
 
 print_date : { year : U16, month : U8, day : U8 } -> Str
@@ -148,7 +148,7 @@ print_offset = |minutes|
 		"Z"
 	} else {
 		size = minutes.to_i64().abs().to_u64_wrap()
-		sign = if minutes < 0 "-" else "+"
+		sign = if (minutes < 0) "-" else "+"
 		"${sign}${pad(size // 60, 2)}:${pad(size % 60, 2)}"
 	}
 
@@ -157,7 +157,7 @@ pad : U64, U64 -> Str
 pad = |n, width| {
 	s = n.to_str()
 	len = s.count_utf8_bytes()
-	short = if len < width width - len else 0
+	short = if (len < width) width - len else 0
 	"${Str.repeat("0", short)}${s}"
 }
 

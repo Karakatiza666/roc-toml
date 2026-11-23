@@ -65,7 +65,7 @@ date_ok = |{ year, month, day }| {
 	leap = (year % 4 == 0 and year % 100 != 0) or year % 400 == 0
 	last =
 		match month {
-			2 => if leap 29 else 28
+			2 => if (leap) 29 else 28
 			4 | 6 | 9 | 11 => 30
 			_ => 31
 		}

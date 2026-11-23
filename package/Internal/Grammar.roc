@@ -489,7 +489,7 @@ special_float = Parser.lazy(|_| special_float_rule)
 
 special_float_rule : Parser(Bytes, F64)
 special_float_rule =
-	Parser.const(|s| |name| if name == "nan" F64.nan else if negative(s) -F64.infinity else F64.infinity)
+	Parser.const(|s| |name| if (name == "nan") F64.nan else if (negative(s)) -F64.infinity else F64.infinity)
 		.keep(sign)
 		.keep(word("inf").alt(word("nan")))
 
@@ -532,7 +532,7 @@ sign_rule : Parser(Bytes, Try(U8, [Missing]))
 sign_rule = Utf8.codeunit_satisfies(|b| b == '+' or b == '-').maybe()
 
 minus : Try(U8, [Missing]) -> List(U8)
-minus = |s| if negative(s) ['-'] else []
+minus = |s| if (negative(s)) ['-'] else []
 
 negative : Try(U8, [Missing]) -> Bool
 negative = |s| s == Ok('-')
@@ -612,7 +612,7 @@ is_binary : U8 -> Bool
 is_binary = |b| b == '0' or b == '1'
 
 hex_value : U8 -> U8
-hex_value = |b| if is_digit(b) b - '0' else if b >= 'a' b - 'a' + 10 else b - 'A' + 10
+hex_value = |b| if (is_digit(b)) b - '0' else if (b >= 'a') b - 'a' + 10 else b - 'A' + 10
 
 # --- Dates and times (RFC 3339) ---
 
@@ -633,7 +633,7 @@ offset_date_time = Parser.lazy(|_| offset_date_time_rule)
 
 offset_date_time_rule : Parser(Bytes, Form)
 offset_date_time_rule =
-	Parser.const(|d| |t| |o| checked(Value.OffsetDateTime({ date: d, time: t, offset_minutes: o.minutes }), [Check.date_problem(d), Check.time_problem(t), if o.ok "" else "offset out of range"]))
+	Parser.const(|d| |t| |o| checked(Value.OffsetDateTime({ date: d, time: t, offset_minutes: o.minutes }), [Check.date_problem(d), Check.time_problem(t), if (o.ok) "" else "offset out of range"]))
 		.keep(date)
 		.skip(time_delimiter)
 		.keep(time)
@@ -716,7 +716,7 @@ numeric_offset = Parser.lazy(|_| numeric_offset_rule)
 
 numeric_offset_rule : Parser(Bytes, Offset)
 numeric_offset_rule =
-	Parser.const(|s| |h| |m| { minutes: (if s == '-' -1 else 1) * (h.to_i16() * 60 + m.to_i16()), ok: h <= 23 and m <= 59 })
+	Parser.const(|s| |h| |m| { minutes: (if (s == '-') -1 else 1) * (h.to_i16() * 60 + m.to_i16()), ok: h <= 23 and m <= 59 })
 		.keep(Utf8.codeunit_satisfies(|b| b == '+' or b == '-'))
 		.keep(two_digits)
 		.skip(Utf8.codeunit(':'))
@@ -814,7 +814,7 @@ ws_comment_newline_rule = ws1.ignore().alt(comment.ignore()).alt(newline.ignore(
 
 # A run of one or more bytes of the class.
 span1 : Utf8.ByteClass, Str -> Parser(Bytes, Bytes)
-span1 = |class, message| Utf8.span_class(class).map(|b| if b.is_empty() Err(message) else Ok(b)).flatten()
+span1 = |class, message| Utf8.span_class(class).map(|b| if (b.is_empty()) Err(message) else Ok(b)).flatten()
 
 ws_class : Utf8.ByteClass
 ws_class = Utf8.ByteClass.from_bytes([' ', '\t'])

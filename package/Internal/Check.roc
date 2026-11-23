@@ -55,7 +55,7 @@ Check :: [].{
 days_in_month : U16, U8 -> U8
 days_in_month = |year, month|
 	match month {
-		2 => if (year % 4 == 0 and year % 100 != 0) or year % 400 == 0 29 else 28
+		2 => if ((year % 4 == 0 and year % 100 != 0) or year % 400 == 0) 29 else 28
 		4 | 6 | 9 | 11 => 30
 		_ => 31
 	}

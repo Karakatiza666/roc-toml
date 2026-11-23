@@ -64,7 +64,7 @@ Ent : Doc.Ent
 
 # The path checks come first, then this one (P6-2).
 valid : Value -> Try({}, [InvalidValue])
-valid = |value| if Check.value_ok(value) Ok({}) else Err(InvalidValue)
+valid = |value| if (Check.value_ok(value)) Ok({}) else Err(InvalidValue)
 
 Span : Doc.Span
 
@@ -185,9 +185,9 @@ value_text = |old, new|
 string_text : Kind, Str -> Str
 string_text = |kind, s|
 	match kind {
-		Literal => if fits_literal(s) "'${s}'" else Text.basic(s)
+		Literal => if (fits_literal(s)) "'${s}'" else Text.basic(s)
 		MlBasic => ml_basic(s)
-		MlLiteral => if fits_ml_literal(s) "'''${lead(s)}${s}'''" else ml_basic(s)
+		MlLiteral => if (fits_ml_literal(s)) "'''${lead(s)}${s}'''" else ml_basic(s)
 		_ => Text.basic(s)
 	}
 
@@ -197,7 +197,7 @@ ml_basic = |s| "\"\"\"${lead(s)}${Text.ml_body(s)}\"\"\""
 # TOML trims a newline right after the opening quotes, so a string that
 # starts with a newline gets one more.
 lead : Str -> Str
-lead = |s| if s.starts_with("\n") "\n" else ""
+lead = |s| if (s.starts_with("\n")) "\n" else ""
 
 fits_literal : Str -> Bool
 fits_literal = |s| s.to_utf8().all(|b| b != '\'' and (b == '\t' or !Text.is_control(b)))
@@ -227,7 +227,7 @@ removed_span = |bytes, bom, e|
 check_insert : Dict(Str, Value), List(Str), Str -> Try({}, [KeyExists, NotATable])
 check_insert = |table, path, key|
 	match table_at(table, path) {
-		Ok(t) => if t.contains(key) Err(KeyExists) else Ok({})
+		Ok(t) => if (t.contains(key)) Err(KeyExists) else Ok({})
 		Err(NotATable) => Err(NotATable)
 		Err(Missing) => Ok({})
 	}
@@ -328,7 +328,7 @@ in_root = |bytes, index, entry, nl|
 				}
 
 				Err(_) => {
-					gap = if ends_open(bytes, index.bom) nl else ""
+					gap = if (ends_open(bytes, index.bom)) nl else ""
 					splice(bytes, bytes.len(), bytes.len(), "${gap}${entry}${nl}")
 				}
 			}
@@ -372,13 +372,13 @@ last_dotted = |index, parent| {
 after_line : List(U8), U64, U64, Str, Str -> Str
 after_line = |bytes, bom, pos, entry, nl| {
 	at = line_end(bytes, pos)
-	gap = if at > bom and bytes.get(at - 1) != Ok('\n') nl else ""
+	gap = if (at > bom and bytes.get(at - 1) != Ok('\n')) nl else ""
 	splice(bytes, at, at, "${gap}${entry}${nl}")
 }
 
 # A new `[t]` header and the entry at the end of the text.
 at_new_header : List(U8), U64, List(Str), Str, Str -> Str
 at_new_header = |bytes, bom, parent, entry, nl| {
-	gap = if ends_open(bytes, bom) "${nl}${nl}" else nl
+	gap = if (ends_open(bytes, bom)) "${nl}${nl}" else nl
 	splice(bytes, bytes.len(), bytes.len(), "${gap}[${Text.path(parent)}]${nl}${entry}${nl}")
 }

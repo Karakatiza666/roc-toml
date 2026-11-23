@@ -13,7 +13,7 @@ Text :: [].{
 	## A key: bare when it is not empty and has only `A-Z a-z 0-9 _ -`, else
 	## a basic string.
 	key : Str -> Str
-	key = |k| if is_bare(k) k else basic(k)
+	key = |k| if (is_bare(k)) k else basic(k)
 
 	## The keys of a path, joined with dots.
 	path : List(Str) -> Str
@@ -53,11 +53,11 @@ escape_byte = |b, raw_newline|
 		'\\' => ['\\', '\\']
 		0x08 => ['\\', 'b']
 		0x09 => ['\\', 't']
-		0x0A => if raw_newline ['\n'] else ['\\', 'n']
+		0x0A => if (raw_newline) ['\n'] else ['\\', 'n']
 		0x0C => ['\\', 'f']
 		0x0D => ['\\', 'r']
-		_ => if Text.is_control(b) ['\\', 'u', '0', '0', hex_digit(b // 16), hex_digit(b % 16)] else [b]
+		_ => if (Text.is_control(b)) ['\\', 'u', '0', '0', hex_digit(b // 16), hex_digit(b % 16)] else [b]
 	}
 
 hex_digit : U8 -> U8
-hex_digit = |n| if n < 10 '0' + n else 'A' + n - 10
+hex_digit = |n| if (n < 10) '0' + n else 'A' + n - 10

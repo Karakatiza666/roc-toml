@@ -48,7 +48,7 @@ new_table = |made| Tab({ made, kids: Dict.empty() })
 
 # A key with a value cannot be a table: the part before `at` names the value.
 not_a_table : U64 -> Problem
-not_a_table = |at| { at: if at > 0 at - 1 else 0, message: "a key with a value cannot be a table" }
+not_a_table = |at| { at: if (at > 0) at - 1 else 0, message: "a key with a value cannot be a table" }
 
 # `at` is the index of the first of `keys` in the key of the header.
 open : Tree, List(Str), Bool, U64 -> Try(Tree, Problem)

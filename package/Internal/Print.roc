@@ -11,7 +11,7 @@ Print :: [].{
 		for section in sections([], table, Bool.False) {
 			match section.header {
 				Ok(h) => {
-					gap = if $out.is_empty() "" else "\n"
+					gap = if ($out.is_empty()) "" else "\n"
 					$out = "${$out}${gap}${h}\n"
 				}
 

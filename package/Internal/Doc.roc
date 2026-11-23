@@ -64,7 +64,7 @@ column_of = |bytes, offset|
 	}
 
 bom_size : List(U8) -> U64
-bom_size = |bytes| if bytes.starts_with([0xEF, 0xBB, 0xBF]) 3 else 0
+bom_size = |bytes| if (bytes.starts_with([0xEF, 0xBB, 0xBF])) 3 else 0
 
 build : List(U8) -> Try({ table : Dict(Str, Value), index : Doc.Index }, Problem)
 build = |bytes| {
@@ -162,7 +162,7 @@ entries_of = |p, prefix, sec, place, total| {
 			own = { path, sec, keys: p.keys.map(|k| span(k.start, k.end)), value, place, inline: Yes({ count, last_end }) }
 			inner = pairs.map_with_index(
 				|q, at| {
-					prev_end = if at == 0 value.start + 1 else pairs.get(at - 1).map_ok(|r| total - r.node.end) ?? value.start
+					prev_end = if (at == 0) value.start + 1 else pairs.get(at - 1).map_ok(|r| total - r.node.end) ?? value.start
 					next_start = pairs.get(at + 1).map_ok(|r| key_start(r, total)) ?? (value.end - 1)
 					entries_of(q, path, sec, Inner({ at, count, prev_end, next_start, open: value.start + 1, close: value.end - 1 }), total)
 				},
@@ -195,11 +195,11 @@ check_depth = |bytes, start| {
 		step =
 			match $scan {
 				Normal => normal_step(bytes, $i, b)
-				Comment => { next: if b == '\n' Normal else Comment, skip: 1, delta: Same }
-				Basic => if b == '\\' { next: Basic, skip: 2, delta: Same } else { next: if b == '"' or b == '\n' Normal else Basic, skip: 1, delta: Same }
-				Literal => { next: if b == '\'' or b == '\n' Normal else Literal, skip: 1, delta: Same }
-				MlBasic => if b == '\\' { next: MlBasic, skip: 2, delta: Same } else if starts_at(bytes, $i, ['"', '"', '"']) { next: Normal, skip: 3, delta: Same } else { next: MlBasic, skip: 1, delta: Same }
-				MlLiteral => if starts_at(bytes, $i, ['\'', '\'', '\'']) { next: Normal, skip: 3, delta: Same } else { next: MlLiteral, skip: 1, delta: Same }
+				Comment => { next: if (b == '\n') Normal else Comment, skip: 1, delta: Same }
+				Basic => if (b == '\\') { next: Basic, skip: 2, delta: Same } else { next: if (b == '"' or b == '\n') Normal else Basic, skip: 1, delta: Same }
+				Literal => { next: if (b == '\'' or b == '\n') Normal else Literal, skip: 1, delta: Same }
+				MlBasic => if (b == '\\') { next: MlBasic, skip: 2, delta: Same } else if (starts_at(bytes, $i, ['"', '"', '"'])) { next: Normal, skip: 3, delta: Same } else { next: MlBasic, skip: 1, delta: Same }
+				MlLiteral => if (starts_at(bytes, $i, ['\'', '\'', '\''])) { next: Normal, skip: 3, delta: Same } else { next: MlLiteral, skip: 1, delta: Same }
 			}
 		match step.delta {
 			Deeper => {
@@ -210,7 +210,7 @@ check_depth = |bytes, start| {
 			}
 
 			Shallower => {
-				$depth = if $depth > 0 $depth - 1 else 0
+				$depth = if ($depth > 0) $depth - 1 else 0
 			}
 
 			Same => {}
@@ -225,8 +225,8 @@ normal_step : List(U8), U64, U8 -> { next : Scan, skip : U64, delta : [Deeper, S
 normal_step = |bytes, i, b|
 	match b {
 		'#' => { next: Comment, skip: 1, delta: Same }
-		'"' => if starts_at(bytes, i, ['"', '"', '"']) { next: MlBasic, skip: 3, delta: Same } else { next: Basic, skip: 1, delta: Same }
-		'\'' => if starts_at(bytes, i, ['\'', '\'', '\'']) { next: MlLiteral, skip: 3, delta: Same } else { next: Literal, skip: 1, delta: Same }
+		'"' => if (starts_at(bytes, i, ['"', '"', '"'])) { next: MlBasic, skip: 3, delta: Same } else { next: Basic, skip: 1, delta: Same }
+		'\'' => if (starts_at(bytes, i, ['\'', '\'', '\''])) { next: MlLiteral, skip: 3, delta: Same } else { next: Literal, skip: 1, delta: Same }
 		'[' | '{' => { next: Normal, skip: 1, delta: Deeper }
 		']' | '}' => { next: Normal, skip: 1, delta: Shallower }
 		_ => { next: Normal, skip: 1, delta: Same }
